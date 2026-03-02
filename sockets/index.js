@@ -24,8 +24,9 @@ module.exports = (io) => {
     userA.socket.join(roomId);
     userB.socket.join(roomId);
 
-    userA.socket.emit('matched', { roomId });
-    userB.socket.emit('matched', { roomId });
+    // ✅ Enviamos el ID del otro para que puedan empezar el video al instante
+    userA.socket.emit('matched', { roomId, others: [userB.socketId], mode: 'random' });
+    userB.socket.emit('matched', { roomId, others: [userA.socketId], mode: 'random' });
 
     console.log(`🎯 Matched: ${userA.userId} ↔ ${userB.userId} (Room: ${roomId})`);
   };
@@ -52,7 +53,7 @@ module.exports = (io) => {
     // 🗝️ crear sala privada
     socket.on('create-private-room', ({ maxParticipants }) => {
       const roomId = createPrivateRoom(maxParticipants);
-      rooms[roomId] = { participants: [userId], private: true, maxParticipants: maxParticipants || 10 };
+      // Aquí se inicializa la sala privada con el creador
       socket.join(roomId);
       socket.emit('private-room-created', { roomId });
       console.log(`🔐 Room ${roomId} created by ${userId} (Limit: ${maxParticipants})`);
@@ -89,9 +90,6 @@ module.exports = (io) => {
       console.log(`📡 [ROOM:${roomId}] ${userId} joined (Current: ${room.participants.length})`);
     });
 
-
-
-
     // 💬 mensajes
     socket.on('chat-message', ({ roomId, text }) => {
       io.to(roomId).emit('chat-message', {
@@ -107,15 +105,16 @@ module.exports = (io) => {
       if (!room) return;
 
       const participantCount = room.participants.length;
+      const isRandom = !room.private;
 
       if (participantCount <= 2) {
         // Caso: Era una charla 1 a 1 o el último decidió irse
-        console.log(`❌ Closing room ${roomId} (Participants: ${participantCount})`);
-        socket.to(roomId).emit('call-ended');
+        console.log(`❌ Closing room ${roomId}`);
+        socket.to(roomId).emit('call-ended', { mode: isRandom ? 'random' : 'private' });
         leaveRoom(roomId, userId);
       } else {
         // Caso: Grupo, solo avisar quién se fue
-        console.log(`� User ${userId} left group room ${roomId}`);
+        console.log(`👋 User left group room ${roomId}`);
         leaveRoom(roomId, userId);
         socket.to(roomId).emit('peer-left', { socketId: socket.id });
       }
@@ -125,12 +124,7 @@ module.exports = (io) => {
     socket.on('leave', ({ roomId: rid }) => {
       handleExit(rid);
       socket.leave(rid);
-      removeFromWaiting(waiting, socket.id); // Keep this from original leave
-    });
-
-    // 💬 mensajes
-    socket.on('chat-message', ({ roomId, message }) => {
-      socket.to(roomId).emit('chat-message', { text: message, fromMe: false, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
+      removeFromWaiting(waiting, socket.id);
     });
 
     // 🧊 WebRTC Signaling
@@ -140,7 +134,7 @@ module.exports = (io) => {
 
     socket.on('disconnect', () => {
       console.log('❌ User disconnected:', socket.id);
-      removeFromWaiting(waiting, socket.id); // Keep this from original disconnect
+      removeFromWaiting(waiting, socket.id);
       // Buscar en qué salas estaba el usuario
       Object.keys(rooms).forEach(rid => {
         if (rooms[rid].participants.includes(userId)) {
