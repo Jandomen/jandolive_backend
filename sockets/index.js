@@ -27,8 +27,7 @@ module.exports = (io) => {
     // ✅ UserA actúa como anfitrión (host), no inicia ofertas.
     userA.socket.emit('matched', { roomId, others: [], mode: 'random' });
     // ✅ UserB actúa como el que "llega", por tanto él inicia WebRTC.
-    userB.socket.emit('matched', { roomId, others: [userA.socket.id], mode: 'random' });
-
+    userB.socket.emit('matched', { roomId, others: [userA.socketId], mode: 'random' });
 
     console.log(`🎯 Matched: ${userA.userId} ↔ ${userB.userId} (Room: ${roomId})`);
   };
@@ -55,7 +54,10 @@ module.exports = (io) => {
     // 🗝️ crear sala privada
     socket.on('create-private-room', ({ maxParticipants }) => {
       const roomId = createPrivateRoom(maxParticipants);
-      // Aquí se inicializa la sala privada con el creador
+
+      // Asegurarse de ser contado como el primer participante
+      rooms[roomId].participants.push(userId);
+
       socket.join(roomId);
       socket.emit('private-room-created', { roomId });
       console.log(`🔐 Room ${roomId} created by ${userId} (Limit: ${maxParticipants})`);
@@ -69,7 +71,7 @@ module.exports = (io) => {
         return socket.emit('error', 'La sala no existe. Verifica el código o crea una nueva.');
       }
 
-      // Obtener otros participantes antes de que este socket se una
+      // Obtener otros sockets
       const otherSockets = Array.from(io.sockets.adapter.rooms.get(roomId) || []);
 
       socket.rooms.forEach((r) => { if (r !== socket.id) socket.leave(r); });
@@ -83,21 +85,21 @@ module.exports = (io) => {
 
       socket.join(roomId);
 
-      // ✅ Informamos quiénes ya están, para poder lanzarles oferta
+      // Informamos quiénes ya están, para poder lanzarles oferta
       socket.emit('joined-room', { roomId, others: otherSockets });
 
-      // 🔥 AVISAR A LOS QUE YA ESTÁN que el video debe empezar
+      // AVISAR A LOS QUE YA ESTÁN
       socket.to(roomId).emit('user-joined', { socketId: socket.id, userId });
 
       console.log(`📡 [ROOM:${roomId}] ${userId} joined (Current: ${room.participants.length})`);
     });
 
     // 💬 mensajes
-    socket.on('chat-message', ({ roomId, text }) => {
-      io.to(roomId).emit('chat-message', {
-        from: socket.id,
-        text,
-        timestamp: Date.now(),
+    socket.on('chat-message', ({ roomId, message }) => {
+      socket.to(roomId).emit('chat-message', {
+        text: message,
+        fromMe: false,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       });
     });
 
@@ -110,12 +112,10 @@ module.exports = (io) => {
       const isRandom = !room.private;
 
       if (participantCount <= 2) {
-        // Caso: Era una charla 1 a 1 o el último decidió irse
         console.log(`❌ Closing room ${roomId}`);
         socket.to(roomId).emit('call-ended', { mode: isRandom ? 'random' : 'private' });
         leaveRoom(roomId, userId);
       } else {
-        // Caso: Grupo, solo avisar quién se fue
         console.log(`👋 User left group room ${roomId}`);
         leaveRoom(roomId, userId);
         socket.to(roomId).emit('peer-left', { socketId: socket.id });
@@ -137,7 +137,6 @@ module.exports = (io) => {
     socket.on('disconnect', () => {
       console.log('❌ User disconnected:', socket.id);
       removeFromWaiting(waiting, socket.id);
-      // Buscar en qué salas estaba el usuario
       Object.keys(rooms).forEach(rid => {
         if (rooms[rid].participants.includes(userId)) {
           handleExit(rid);
