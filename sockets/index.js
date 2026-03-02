@@ -78,6 +78,9 @@ module.exports = (io) => {
       }
 
       socket.join(roomId);
+      // ✅ Confirmar al que entra que ya está dentro
+      socket.emit('joined-room', { roomId });
+
       // 🔥 AVISAR A LOS QUE YA ESTÁN que el video debe empezar
       socket.to(roomId).emit('user-joined', { socketId: socket.id, userId });
 
