@@ -95,30 +95,52 @@ module.exports = (io) => {
       });
     });
 
-    // 🚪 salir
-    socket.on('leave', ({ roomId }) => {
-      console.log(`🚪 ${socket.id} left ${roomId}`);
-      socket.leave(roomId);
-      socket.to(roomId).emit('peer-left', { socketId: socket.id });
-      leaveRoom(roomId, userId);
-      removeFromWaiting(waiting, socket.id);
+    // Lógica unificada para salir de una sala
+    const handleExit = (roomId) => {
+      const room = rooms[roomId];
+      if (!room) return;
+
+      const participantCount = room.participants.length;
+
+      if (participantCount <= 2) {
+        // Caso: Era una charla 1 a 1 o el último decidió irse
+        console.log(`❌ Closing room ${roomId} (Participants: ${participantCount})`);
+        socket.to(roomId).emit('call-ended');
+        leaveRoom(roomId, userId);
+      } else {
+        // Caso: Grupo, solo avisar quién se fue
+        console.log(`� User ${userId} left group room ${roomId}`);
+        leaveRoom(roomId, userId);
+        socket.to(roomId).emit('peer-left', { socketId: socket.id });
+      }
+    };
+
+    // 🗝️ salir de sala
+    socket.on('leave', ({ roomId: rid }) => {
+      handleExit(rid);
+      socket.leave(rid);
+      removeFromWaiting(waiting, socket.id); // Keep this from original leave
     });
 
-    // WebRTC señales
-    socket.on('offer', ({ roomId, offer }) => socket.to(roomId).emit('offer', { offer, from: socket.id }));
-    socket.on('answer', ({ roomId, answer }) => socket.to(roomId).emit('answer', { answer, from: socket.id }));
-    socket.on('ice-candidate', ({ roomId, candidate }) => socket.to(roomId).emit('ice-candidate', { candidate, from: socket.id }));
+    // 💬 mensajes
+    socket.on('chat-message', ({ roomId, message }) => {
+      socket.to(roomId).emit('chat-message', { text: message, fromMe: false, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
+    });
 
-    // 🔴 desconexión
+    // 🧊 WebRTC Signaling
+    socket.on('offer', ({ roomId, offer, to }) => socket.to(to).emit('offer', { offer, from: socket.id }));
+    socket.on('answer', ({ roomId, answer, to }) => socket.to(to).emit('answer', { answer, from: socket.id }));
+    socket.on('ice-candidate', ({ roomId, candidate, to }) => socket.to(to).emit('ice-candidate', { candidate, from: socket.id }));
+
     socket.on('disconnect', () => {
-      console.log('🔴 Disconnected:', socket.id);
-      removeFromWaiting(waiting, socket.id);
-      for (const room of socket.rooms) {
-        if (room !== socket.id) {
-          socket.to(room).emit('peer-left', { socketId: socket.id });
-          leaveRoom(room, userId);
+      console.log('❌ User disconnected:', socket.id);
+      removeFromWaiting(waiting, socket.id); // Keep this from original disconnect
+      // Buscar en qué salas estaba el usuario
+      Object.keys(rooms).forEach(rid => {
+        if (rooms[rid].participants.includes(userId)) {
+          handleExit(rid);
         }
-      }
+      });
     });
 
   });
