@@ -50,28 +50,42 @@ module.exports = (io) => {
     });
 
     // 🗝️ crear sala privada
-    socket.on('create-private-room', () => {
-      const roomId = createPrivateRoom(userId);
+    socket.on('create-private-room', ({ maxParticipants }) => {
+      const roomId = createPrivateRoom(maxParticipants);
+      rooms[roomId] = { participants: [userId], private: true, maxParticipants: maxParticipants || 10 };
       socket.join(roomId);
       socket.emit('private-room-created', { roomId });
-      console.log(`🗝️ Private room created by ${userId}: ${roomId}`);
+      console.log(`🔐 Room ${roomId} created by ${userId} (Limit: ${maxParticipants})`);
     });
 
     // 🗝️ unirse a sala (Privada o Aleatoria)
     socket.on('join-room', ({ roomId }) => {
+      const room = rooms[roomId];
+
+      // 🛡️ NO permitimos que nadie se una a salas que NO han sido registradas
+      if (!room) {
+        return socket.emit('error', 'La sala no existe o el código es inválido.');
+      }
+
+      // Limpieza preventiva: Sacar al usuario de cualquier rastro de sala previa
+      socket.rooms.forEach((r) => { if (r !== socket.id) socket.leave(r); });
+
       // Si la sala es privada, validamos con el matchmaker
-      if (rooms[roomId]?.private) {
+      if (room.private) {
         const result = joinPrivateRoom(roomId, userId);
         if (!result.success) {
-          socket.emit('error', result.error);
-          return;
+          // Si ya está en la sala, simplemente lo aceptamos (re-conexión)
+          if (result.error !== 'Ya estás en la sala') {
+            return socket.emit('error', result.error);
+          }
         }
       }
 
       socket.join(roomId);
       socket.to(roomId).emit('user-joined', { socketId: socket.id, userId });
-      console.log(`📡 ${userId} is ready in room ${roomId}`);
+      console.log(`📡 ${userId} joined room ${roomId}`);
     });
+
 
 
     // 💬 mensajes
