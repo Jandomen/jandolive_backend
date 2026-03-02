@@ -62,12 +62,13 @@ module.exports = (io) => {
     socket.on('join-room', ({ roomId }) => {
       const room = rooms[roomId];
 
-      // 🛡️ NO permitimos que nadie se una a salas que NO han sido creadas
       if (!room) {
         return socket.emit('error', 'La sala no existe. Verifica el código o crea una nueva.');
       }
 
-      // Limpieza: Asegurar que el usuario no esté en estados "fantasma" de otras salas
+      // Obtener otros participantes antes de que este socket se una
+      const otherSockets = Array.from(io.sockets.adapter.rooms.get(roomId) || []);
+
       socket.rooms.forEach((r) => { if (r !== socket.id) socket.leave(r); });
 
       if (room.private) {
@@ -78,14 +79,16 @@ module.exports = (io) => {
       }
 
       socket.join(roomId);
-      // ✅ Confirmar al que entra que ya está dentro
-      socket.emit('joined-room', { roomId });
+
+      // ✅ Informamos quiénes ya están, para poder lanzarles oferta
+      socket.emit('joined-room', { roomId, others: otherSockets });
 
       // 🔥 AVISAR A LOS QUE YA ESTÁN que el video debe empezar
       socket.to(roomId).emit('user-joined', { socketId: socket.id, userId });
 
       console.log(`📡 [ROOM:${roomId}] ${userId} joined (Current: ${room.participants.length})`);
     });
+
 
 
 
