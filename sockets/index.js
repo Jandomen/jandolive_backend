@@ -62,28 +62,26 @@ module.exports = (io) => {
     socket.on('join-room', ({ roomId }) => {
       const room = rooms[roomId];
 
-      // 🛡️ NO permitimos que nadie se una a salas que NO han sido registradas
+      // 🛡️ NO permitimos que nadie se una a salas que NO han sido creadas
       if (!room) {
-        return socket.emit('error', 'La sala no existe o el código es inválido.');
+        return socket.emit('error', 'La sala no existe. Verifica el código o crea una nueva.');
       }
 
-      // Limpieza preventiva: Sacar al usuario de cualquier rastro de sala previa
+      // Limpieza: Asegurar que el usuario no esté en estados "fantasma" de otras salas
       socket.rooms.forEach((r) => { if (r !== socket.id) socket.leave(r); });
 
-      // Si la sala es privada, validamos con el matchmaker
       if (room.private) {
         const result = joinPrivateRoom(roomId, userId);
-        if (!result.success) {
-          // Si ya está en la sala, simplemente lo aceptamos (re-conexión)
-          if (result.error !== 'Ya estás en la sala') {
-            return socket.emit('error', result.error);
-          }
+        if (!result.success && result.error !== 'Ya estás en la sala') {
+          return socket.emit('error', result.error);
         }
       }
 
       socket.join(roomId);
+      // 🔥 AVISAR A LOS QUE YA ESTÁN que el video debe empezar
       socket.to(roomId).emit('user-joined', { socketId: socket.id, userId });
-      console.log(`📡 ${userId} joined room ${roomId}`);
+
+      console.log(`📡 [ROOM:${roomId}] ${userId} joined (Current: ${room.participants.length})`);
     });
 
 
