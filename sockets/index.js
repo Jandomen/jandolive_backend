@@ -129,10 +129,25 @@ module.exports = (io) => {
       removeFromWaiting(waiting, socket.id);
     });
 
-    // 🧊 WebRTC Signaling
-    socket.on('offer', ({ roomId, offer, to }) => socket.to(to).emit('offer', { offer, from: socket.id }));
-    socket.on('answer', ({ roomId, answer, to }) => socket.to(to).emit('answer', { answer, from: socket.id }));
-    socket.on('ice-candidate', ({ roomId, candidate, to }) => socket.to(to).emit('ice-candidate', { candidate, from: socket.id }));
+    // 🧊 WebRTC Signaling - Protegido por validación de sala
+    socket.on('offer', ({ roomId, offer, to }) => {
+      if (socket.rooms.has(roomId)) {
+        socket.to(to).emit('offer', { offer, from: socket.id });
+      }
+    });
+
+    socket.on('answer', ({ roomId, answer, to }) => {
+      if (socket.rooms.has(roomId)) {
+        socket.to(to).emit('answer', { answer, from: socket.id });
+      }
+    });
+
+    socket.on('ice-candidate', ({ roomId, candidate, to }) => {
+      if (socket.rooms.has(roomId)) {
+        socket.to(to).emit('ice-candidate', { candidate, from: socket.id });
+      }
+    });
+
 
     socket.on('disconnect', () => {
       console.log('❌ User disconnected:', socket.id);
