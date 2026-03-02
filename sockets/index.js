@@ -24,9 +24,11 @@ module.exports = (io) => {
     userA.socket.join(roomId);
     userB.socket.join(roomId);
 
-    // ✅ Enviamos el ID del otro para que puedan empezar el video al instante
-    userA.socket.emit('matched', { roomId, others: [userB.socketId], mode: 'random' });
-    userB.socket.emit('matched', { roomId, others: [userA.socketId], mode: 'random' });
+    // ✅ UserA actúa como anfitrión (host), no inicia ofertas.
+    userA.socket.emit('matched', { roomId, others: [], mode: 'random' });
+    // ✅ UserB actúa como el que "llega", por tanto él inicia WebRTC.
+    userB.socket.emit('matched', { roomId, others: [userA.socket.id], mode: 'random' });
+
 
     console.log(`🎯 Matched: ${userA.userId} ↔ ${userB.userId} (Room: ${roomId})`);
   };
